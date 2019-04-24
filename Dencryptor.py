@@ -16,7 +16,7 @@ from Crypto.Cipher import AES
 #Global Variables Initialization
 keyToDencrypt = ''  #Key File
 dencryptionKey = '' #Key File Contents
-port = 41235
+port = 25565
 
 def longLine():
     print("--------------------------------------------------------------------------------")
@@ -110,10 +110,20 @@ def sendFileScreen():
             longLine()
             print("Sending File...")
             time.sleep(1)
-            encryptedFileOpen = open(encryptedFile, "r")
-            s.send(encryptedFileOpen.read())
+            encryptedFileOpen = open(encryptedFile, "rb")
+            fileLen = len(encryptedFileOpen.read()) / 16
+            print(fileLen)
+            s.send(str(fileLen))
+            for x in range(fileLen):
+                s.send(encryptedFileOpen.read(16))
+                print(encryptedFileOpen.read(16))
             encryptedFileOpen.close()
-            os.system("rm " + encryptedFile)
+            #os.system("rm " + encryptedFile)
+            longLine()
+            print("File Has Been Sent")
+            s.close()
+            null = raw_input("Press Enter To Return To Main Menu")
+            mainFunction()
         elif (sendConfirm == 0):
             s.close()
             print("Reciever Rejected The Connection")
@@ -137,7 +147,7 @@ def recieveFileScreen():
         c.send('1')
         longLine()
         print("Getting File Name")
-        fileName = c.recv(16)
+        fileName = c.recv(32)
         print("File Name: " + fileName)
         longLine()
         time.sleep(0.3)
@@ -152,14 +162,21 @@ def recieveFileScreen():
         print("Recieving File")
         longLine()
         time.sleep(0.3)
-        encryptedFile = c.recv(64000)
-        encryptedFileOpen = open(fileName, "w+")
-        encryptedFileOpen.write(encryptedFile)
-        encryptedFileOpen.close()
+        encryptedFileLen = int(c.recv(32))
+        print(encryptedFileLen)
+        encryptedFileOpen = open(fileName, "wb")
+        for x in range(encryptedFileLen):
+            data = c.recv(16)
+            encryptedFileOpen.write(data)
         decrypt(dencryptionKey, fileName)
-        os.system("rm " + fileName)
+        encryptedFileOpen.close()
+        #os.system("rm " + fileName)
         dencryptionKey = ''
         c.close()
+        longLine()
+        print("File Has Been Downloaded")
+        null = raw_input("Press Enter To Return To Main Menu")
+        mainFunction()
 
 #Adds A Key File To Session
 def addKeyScreen():
