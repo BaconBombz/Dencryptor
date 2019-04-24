@@ -86,7 +86,9 @@ def addKeyScreen():
     keyToDencrypt = raw_input("Key To Add: ")
     exists = os.path.isfile(keyToDencrypt)  #Check To See If Key File Exists
     if (exists):
-        keyBits = len(keyToDencrypt)
+        keyFile = open(keyToDencrypt, "r")
+        keyBits = len(keyFile.read())
+        keyFile.close()
         bits = {16, 24, 32}
         if(keyBits in bits):
             print("Key Added Successfully")
