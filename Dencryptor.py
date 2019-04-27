@@ -1,7 +1,7 @@
 #Dencryptor: Encryption And Decryption Software
 #Encryption: AES
 #UI: Terminal Interface
-#Dependencies:  Python{Pycrypto}, System{figlet}
+#Dependencies:  Python{pyAesCrypt}, System{figlet}
 #Created By: BaconBombz
 #Version 2.0
 
@@ -10,13 +10,14 @@
 #Version 2.0 Offers Secure File Transfer Over The Internet
 
 #Import Neccessary Libraries
-import os, random, struct, string, time, sys, readline, socket
+import os, random, struct, string, time, sys, readline, pyAesCrypt, socket, hashlib, getpass
 from Crypto.Cipher import AES
-
 #Global Variables Initialization
-keyToDencrypt = ''  #Key File
+keyFile = ''  #Key File
 dencryptionKey = '' #Key File Contents
-port = 25565
+bufferSize = 128 * 1024
+chunkSize = 16
+port = 2221
 
 def longLine():
     print("--------------------------------------------------------------------------------")
@@ -34,11 +35,13 @@ def main():
     title()
     global dencryptionKey
     #If Key Files In Session Print Key File Under Title
-    if (len(keyToDencrypt) > 0):
-        print("Key: " + keyToDencrypt)
-        dencryptionKeyFile = open(keyToDencrypt, 'r')
-        dencryptionKey = dencryptionKeyFile.read()
+    if (len(keyFile) > 0):
+        print("Key File: " + keyFile)
+        with open(keyFile, 'r') as keyFileObject:
+            dencryptionKey = keyFileObject.read()
         longLine()
+    elif (len(keyFile) == 0):
+        dencryptionKey = ''
     print("1) Encrypt A File")
     print("2) Decrypt A File")
     print("3) Encrypt A Folder")
@@ -46,13 +49,13 @@ def main():
     print("5) Send A Secure File Transfer")
     print("6) Recieve A Secure File Transfer")
     print("7) Generate A 16 Bit Key")
-    print("8) Generate A 24 Bit Key")
-    print("9) Generate A 32 Bit Key")
-    print("10) Add Key To Session")
+    print("8) Generate A 64 Bit Key")
+    print("9) Generate A 128 Bit Key")
+    print("10) Add Key File To Session")
     print("11) Remove Key From Session")
     print("0) Exit")
     longLine()
-    option = raw_input("Option: ")
+    option = input("Option: ")
     opTree(option)  #Takes Option And Runs It Through The Operation Handler To Change Screens/Functions
 
 #Option Controller For Main Menu
@@ -72,9 +75,9 @@ def opTree(option):
     elif (option == "7"):
         keyGenScreen(16)    #Generates A 16 Bit Key File
     elif (option == "8"):
-        keyGenScreen(24)    #Generates A 24 Bit Key File
+        keyGenScreen(64)    #Generates A 64 Bit Key File
     elif (option == "9"):
-        keyGenScreen(32)    #Generates A 32 Bit Key File
+        keyGenScreen(128)    #Generates A 128 Bit Key File
     elif (option == "10"):
         addKeyScreen()
     elif (option == "11"):
@@ -87,122 +90,214 @@ def opTree(option):
 
 def sendFileScreen():
     title()
-    rHost = raw_input("Reciever's IP: ")
-    fileToSend = raw_input("File To Send: ")
+    rHost = input("Reciever's IP: ")
+    fileToSend = input("File To Send: ")
     longLine()
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print("Waiting For Reciever's Confirmation...")
+    longLine()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s.connect((rHost, port))
-        sendConfirm = s.recv(1)
-        if (sendConfirm == '1'):
-            encryptedFile = fileToSend + ".dnc"
-            print("Encrypting File...")
-            encrypt(dencryptionKey, fileToSend)
-            time.sleep(1)
-            longLine()
-            print("Sending File Name")
-            longLine()
-            s.send(encryptedFile)
-            time.sleep(1)
-            print("Sending Key...")
-            time.sleep(1)
-            s.send(dencryptionKey)
-            longLine()
-            print("Sending File...")
-            time.sleep(1)
-            encryptedFileOpen = open(encryptedFile, "rb")
-            fileLen = len(encryptedFileOpen.read()) / 16
-            print(fileLen)
-            s.send(str(fileLen))
-            for x in range(fileLen):
-                s.send(encryptedFileOpen.read(16))
-                print(encryptedFileOpen.read(16))
-            encryptedFileOpen.close()
-            #os.system("rm " + encryptedFile)
-            longLine()
-            print("File Has Been Sent")
-            s.close()
-            null = raw_input("Press Enter To Return To Main Menu")
-            mainFunction()
+        sock.connect((rHost, port))
+        sendConfirm = sock.recv(1)
+        if (sendConfirm.decode('utf-8') == '1'):
+            encryptedFileName = fileToSend + ".dnc"
+            pyAesCrypt.encryptFile(fileToSend, encryptedFileName, dencryptionKey, bufferSize)
+            with sock,open(encryptedFileName,'rb') as f:
+                print("Sending File Name")
+                longLine()
+                fileToSend = fileToSend + ".dnc"
+                sock.sendall(fileToSend.encode() + b'\n')
+                time.sleep(0.3)
+                print("Sending File Size")
+                longLine()
+                sock.sendall(f'{os.path.getsize(fileToSend)}'.encode() + b'\n')
+                time.sleep(0.3)
+                print("Starting Secure Key Exchange")
+                print("Sending Modulo")
+                mod = ''
+                for x in range(3):
+                    mod = mod + str(random.randint(1,3))
+                sock.sendall(mod.encode() + b'\n')
+                time.sleep(0.1)
+                print("Sending Base")
+                base = ''
+                for x in range(3):
+                    base = base + str(random.randint(1,3))
+                sock.sendall(base.encode() + b'\n')
+                print("Generating Private Key")
+                privateKey = ''
+                for x in range(5):
+                    privateKey = privateKey + str(random.randint(1,5))
+                time.sleep(0.3)
+                print("Generating Equation")
+                senderPublicKey = (int(base) ** int(privateKey)) % int(mod)
+                time.sleep(0.1)
+                print("Recieving Reciever's Public Key")
+                recieverPublicKey = sock.recv(8000)
+                recieverPublicKey = recieverPublicKey.decode('utf-8')
+                time.sleep(0.1)
+                print("Sending Public Key")
+                sock.sendall(str(senderPublicKey).encode() + b'\n')
+                time.sleep(0.1)
+                print("Calculating Key")
+                sharedKey = str((int(recieverPublicKey) ** int(privateKey)) % int(mod))
+                sharedKey = hashlib.sha256(sharedKey.encode())
+                sharedKey = sharedKey.hexdigest()
+                sharedKey = sharedKey[0:32]
+                print("Encrypting Key")
+                initVector = 16 * '\x00'
+                sharedKey = bytes(str(sharedKey), encoding='utf-8')
+                encryptor = AES.new(sharedKey, AES.MODE_CBC, initVector)
+                encryptedKey = encryptor.encrypt(dencryptionKey)
+                encryptedKey = encryptedKey + (" " * 8).encode()
+                encryptedKeySize = str(len(encryptedKey)).encode()
+                time.sleep(0.1)
+                print("Sending Encryption Key Size")
+                sock.sendall(encryptedKeySize + b'\n')
+                time.sleep(0.1)
+                print("Sending Encryption Key")
+                sock.sendall(encryptedKey)
+                time.sleep(0.1)
+                print("Secure Key Transfer Complete")
+                longLine()
+                time.sleep(0.1)
+                print("Sending Encrypted File")
+                longLine()
+                while True:
+                    data = f.read(chunkSize)
+                    if not data: break
+                    sock.sendall(data)
+                print("File Has Been Sent")
+                sock.close()
+                null = input("Press Enter To Return To Main Menu")
+                mainFunction()
         elif (sendConfirm == 0):
-            s.close()
+            sock.close()
             print("Reciever Rejected The Connection")
-            null = raw_input("Press ENTER To Return To Return To The Main Menu")
+            null = input("Press ENTER To Return To Return To The Main Menu")
             mainFunction()
     except socket.error:
-        s.close()
+        sock.close()
         print("There Was An Error Connecting To The Reciever")
-        null = raw_input("Press ENTER To Return To Return To The Main Menu")
+        null = input("Press ENTER To Return To Return To The Main Menu")
         mainFunction()
 
 def recieveFileScreen():
+    global dencryptionKey
     title()
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("127.0.0.1", port))
-    s.listen(120)
-    c, addr = s.accept()
+    print("Waiting For Sender To Connect...")
+    longLine()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(('', port))
+    sock.listen(1)
+    client, addr = sock.accept()
     print(str(addr) + " Wants To Send A File...")
-    confirm = raw_input("Would You Like To Recieve The File? [yes/no]: ")
+    confirm = input("Would You Like To Recieve The File? [yes/no]: ")
+    longLine()
     if (confirm.lower() == "yes"):
-        c.send('1')
-        longLine()
-        print("Getting File Name")
-        fileName = c.recv(32)
-        print("File Name: " + fileName)
-        longLine()
-        time.sleep(0.3)
-        print("Recieving Key")
-        longLine()
-        time.sleep(0.3)
-        global dencryptionKey
-        dencryptionKey = c.recv(32)
-        print("Key Recieved")
-        longLine()
-        time.sleep(0.3)
-        print("Recieving File")
-        longLine()
-        time.sleep(0.3)
-        encryptedFileLen = int(c.recv(32))
-        print(encryptedFileLen)
-        encryptedFileOpen = open(fileName, "wb")
-        for x in range(encryptedFileLen):
-            data = c.recv(16)
-            encryptedFileOpen.write(data)
-        decrypt(dencryptionKey, fileName)
-        encryptedFileOpen.close()
-        #os.system("rm " + fileName)
+        client.send(b'1')
+        with client, client.makefile('rb') as clientFile:
+            print("Getting File Name")
+            fileName = clientFile.readline().strip().decode()
+            print("File Name: " + fileName)
+            longLine()
+            time.sleep(0.3)
+            print("Geting File Size")
+            length = int(clientFile.readline())
+            print("File Size: " + str(length) + " Bytes")
+            longLine()
+            time.sleep(0.3)
+            print("Starting Secure Key Exchange")
+            print("Recieving Modulo")
+            mod = int(clientFile.readline())
+            time.sleep(0.1)
+            print("Modulo: " + str(mod))
+            print("Receiving Base")
+            base = int(clientFile.readline())
+            time.sleep(0.1)
+            print("Base: " + str(base))
+            print("Generating Private Key")
+            privateKey = ''
+            for x in range(5):
+                privateKey = privateKey + str(random.randint(1,5))
+            time.sleep(0.3)
+            print("Generating Equation")
+            recieverPublicKey = (int(base) ** int(privateKey)) % int(mod)
+            time.sleep(0.1)
+            print("Sending Public Key")
+            client.send(str(recieverPublicKey).encode())
+            time.sleep(0.1)
+            print("Recieving Sender's Public Key")
+            senderPublicKey = int(clientFile.readline())
+            time.sleep(0.1)
+            print("Calculating Key")
+            sharedKey = str((int(senderPublicKey ** int(privateKey))) % int(mod))
+            sharedKey = hashlib.sha256(sharedKey.encode())
+            sharedKey = sharedKey.hexdigest()
+            sharedKey = sharedKey[0:32]
+            initVector = 16 * '\x00'
+            print("Recieving Encryption Key Size")
+            encryptedKeySize = clientFile.readline()
+            encryptedKeySize = int(encryptedKeySize.decode('utf-8'))
+            time.sleep(0.1)
+            print("Decrypting Key")
+            encryptedKey = clientFile.read(encryptedKeySize)
+            initVector = 16 * '\x00'
+            sharedKey = bytes(str(sharedKey), encoding='utf-8')
+            decryptor = AES.new(sharedKey, AES.MODE_CBC, initVector)
+            for x in range(8):
+                encryptedKeyPart = encryptedKey[0:16]
+                encryptedKey = encryptedKey[16:-1]
+                dencryptionKey = dencryptionKey + decryptor.decrypt(encryptedKeyPart).decode('utf-8')
+            time.sleep(0.1)
+            print("Secure Key Transfer Complete")
+            longLine()
+            time.sleep(0.1)
+            print("Downloading Encrypted File")
+            print(("This May Take A While"))
+            longLine()
+            with open(fileName,'wb') as f:
+                while length:
+                    chunk = min(length,bufferSize)
+                    data = clientFile.read(chunk)
+                    if not data: break # socket closed
+                    f.write(data)
+                    length -= len(data)
+            if length != 0:
+                print("Download Failed")
+            else:
+                time.sleep(0.1)
+                print("Encrypted File Downloaded")
+            unencryptedFileName = os.path.splitext(fileName)[0]
+            pyAesCrypt.decryptFile(fileName, unencryptedFileName,dencryptionKey, bufferSize)
+            os.system("mv " + unencryptedFileName + " /home/" + getpass.getuser() + "/Downloads")
+            print("File Decrypted And Sent To Downloads Folder")
+            null = input("Press ENTER To Return To Main Menu")
+            mainFunction()
+        os.system("rm " + fileName)
         dencryptionKey = ''
         c.close()
         longLine()
         print("File Has Been Downloaded")
-        null = raw_input("Press Enter To Return To Main Menu")
+        null = input("Press Enter To Return To Main Menu")
         mainFunction()
 
 #Adds A Key File To Session
 def addKeyScreen():
     title()
-    global keyToDencrypt
-    keyToDencrypt = raw_input("Key To Add: ")
-    exists = os.path.isfile(keyToDencrypt)  #Check To See If Key File Exists
+    global keyFile
+    keyFile = input("Key To Add: ")
+    exists = os.path.isfile(keyFile)  #Check To See If Key File Exists
     if (exists):
-        keyFile = open(keyToDencrypt, "r")
-        keyBits = len(keyFile.read())
-        keyFile.close
-        bits = {16,24,32}
-        if(keyBits in bits):
-            print("Key Added Successfully")
-            null = raw_input("Press ENTER To Continue")
-            main()
-        else:
-            print("Key Is Not 16, 24, Or 32 Bits")
-            keyToDencrypt = ''
-            null = raw_input("Press ENTER To Retry")
-            addKeyScreen()
+        longLine()
+        print("Key Added Successfully")
+        null = input("Press ENTER To Continue")
+        mainFunction()
     else:
-        keyToDencrypt = ''
+        keyFile = ''
         print("Key File Not Found")
-        null = raw_input("Press ENTER To Retry")
-        addKeyScreen()
+        null = input("Press ENTER To Return To Main Menu")
+        mainFunction()
 
 #Removes Key From Session
 def removeKeyScreen():
@@ -210,161 +305,109 @@ def removeKeyScreen():
     global keyToDencrypt
     keyToDencrypt = ''
     print("Successfully Removed Key")
-    null = raw_input("Press ENTER To Continue")
+    null = input("Press ENTER To Continue")
     main()
 
 #Generates Key File With Bit Number Argument
 def keyGenScreen(bits):
     title()
-    keyName = raw_input("Key File Name: ") + ".dnckey" #Generates String With Key File Name (.dnckey extension)
+    keyFileName = input("Key File Name: ") + ".dnckey" #Generates String With Key File Name (.dnckey extension)
+    longLine()
     print("Generating A " + str(bits) + " Bit Key...")
     longLine()
     key = ''.join(random.choice(string.ascii_letters + string.digits) for i in range(bits)) #Generates The Key
     for c in key:   #Slowly Prints Out The Key
         sys.stdout.write(c)
         sys.stdout.flush()
-        time.sleep(0.2)
+        time.sleep(0.1)
     print('')   #Acts Like /n And Returns To New Line
     longLine()
-    keyFile = open(keyName, 'w+')   #Create Key File In Write Mode
-    print("Saving To " + keyName)
-    keyFile.write(key)  #Write Key To File
-    keyFile.close()
+    with open(keyFileName, 'w+') as keyFileObject:   #Create Key File In Write Mode
+        keyFileObject.write(key)    #Write Key To File
+    print("Saving To " + keyFileName)
     time.sleep(0.3)
     print("Done")
+    longLine()
     print("###DO NOT SHARE THIS KEY UNLESS YOU TRUST THEM###")
-    useKey = raw_input("Use This Key To Encrypt Files? [yes/no]: ")
+    longLine()
+    useKey = input("Use This Key To Encrypt Files? [yes/no]: ")
     if (useKey.lower() == "yes"):   #If User Wants To Add Key To Session Add The Key.
-        global keyToDencrypt
-        keyToDencrypt = keyName
-    null = raw_input("Press ENTER to Continue")
-    main()
+        global keyFile
+        keyFile = keyFileName
+    null = input("Press ENTER to Continue")
+    mainFunction()
 
 #Encrypts Fiile The User Inputs
 def encryptScreen():
     title()
-    unencryptedFile = raw_input("File To Encrypt: ")
+    unencryptedFileName = input("File To Encrypt: ")
     longLine()
-    print("Using " + keyToDencrypt + " as Key For Encryption")
+    print("Using " + keyFile + " as Key For Encryption")
     print("Encrypting File...")
-    time.sleep(1)
-    encrypt(dencryptionKey, unencryptedFile)    #Encrypts File With Key
     longLine()
+    time.sleep(1)
+    encryptedFileName = unencryptedFileName + ".dnc"
+    pyAesCrypt.encryptFile(unencryptedFileName, encryptedFileName, dencryptionKey, bufferSize)    #Encrypts File With Key
     print("Your File Has Been Encrypted")
-    null = raw_input("Press ENTER to Continue")
-    main()
+    null = input("Press ENTER to Continue")
+    mainFunction()
 
 #Decrypts File The User Inputs
 def decryptScreen():
     title()
-    encryptedFile = raw_input("File To Decrypt: ")
+    encryptedFileName = input("File To Decrypt: ")
     longLine()
-    print("Using " + keyToDencrypt + " as Key For Decryption")
+    print("Using " + keyFile + " as Key For Decryption")
     print("Decrypting File...")
-    time.sleep(1)
-    decrypt(dencryptionKey, encryptedFile)  #Decrypts File With Key; If Wrong Key Is Given, File Will Still Decrypt But Data Is Still Garbled
-    time.sleep(0.05)
     longLine()
+    time.sleep(1)
+    unencryptedFileName = os.path.splitext(encryptedFileName)[0]
+    pyAesCrypt.decryptFile(encryptedFileName, unencryptedFileName,dencryptionKey, bufferSize)  #Decrypts File With Key; If Wrong Key Is Given, File Will Still Decrypt But Data Is Still Garbled
     print("Your File Has Been Decrypted")
-    null = raw_input("Press ENTER to Continue")
-    main()
-
-#Main Handler For Encrypting Files
-def encrypt(key, unencryptedFile, encryptedFile=None, chunkSize=64*1024):
-    if not encryptedFile:
-        encryptedFile = unencryptedFile + ".dnc"    #Encrypted File Name
-
-        initVector = ''.join(chr(random.randint(0, 0xFF)) for i in range(16))   #Generate An AES IV
-        encryptor = AES.new(key, AES.MODE_CBC, initVector)  #Create Encryptor Object
-        fileSize = os.path.getsize(unencryptedFile) #Get File Size Of File To Encrypt
-
-        unencryptedFileOpen = open(unencryptedFile, 'rb')   #open Unencrypted File In Read Mode
-        encryptedFileOpen = open(encryptedFile, "wb")   #Creates Encrypted File In Write Mode
-
-        encryptedFileOpen.write(struct.pack('<Q', fileSize))    #Writes Packed File Size To Encrypted File
-        encryptedFileOpen.write(initVector) #Writes AES IV To Encrypted File
-
-        while (True):
-            chunk = unencryptedFileOpen.read(chunkSize)
-
-            if (len(chunk) == 0):
-                break
-            elif (len(chunk) % 16 != 0):
-                chunk += ' ' * (16 - len(chunk) % 16)   #Pad The Chunk With Spaces To Fit AES Standard
-
-            encryptedFileOpen.write(encryptor.encrypt(chunk))   #Write Chunk Into Encrypted File
-
-#Main Handler For Decrypting Files
-def decrypt(key, encryptedFile, decryptedFile=None, chunkSize=24*1024):
-    if not decryptedFile:
-        decryptedFile = os.path.splitext(encryptedFile)[0]  #Removes ".dnc" Extension
-
-    encryptedFileOpen = open(encryptedFile, "rb")   #Opens Encrypted File In Read Mode
-    decryptedFileOpen = open(decryptedFile, "wb")   #Creates Unencrypted FIle In Write Mode
-
-    originalSize = struct.unpack('<Q', encryptedFileOpen.read(struct.calcsize('Q')))[0] #Calculates Original Size
-    initVector = encryptedFileOpen.read(16) #Read The AES IV From Encrypted File
-    decryptor = AES.new(key, AES.MODE_CBC, initVector)  #Creates Object For Decryption
-
-    while True:
-        chunk = encryptedFileOpen.read(chunkSize)   #Read Chunk
-        if len(chunk) == 0:
-            break
-        decryptedFileOpen.write(decryptor.decrypt(chunk))   #Decrypt Chunk
-
-    decryptedFileOpen.truncate(originalSize)    #Takes All Chunks And Puts Them Together
+    null = input("Press ENTER to Continue")
+    mainFunction()
 
 #Encrypts Folder Contents
 def encryptFolderScreen():
-    if (len(keyToDencrypt) > 0):
-        title()
-        folderToEncrypt = raw_input("Folder To Encrypt: ")
-        longLine()
-        print("Using " + keyToDencrypt + " as Key For Encryption")
-        print("Encrypting Files")
-        longLine()
-        for file in os.listdir(folderToEncrypt):    #Gets Filenames In The Folder
-            print(file + "  OK")
-            encrypt(dencryptionKey, folderToEncrypt + "/" + file)   #Encrypts Each File With Session Key
-            time.sleep(0.1)
-        longLine()
-        print("All Files Have Been Encrypted")
-        null = raw_input("Press ENTER To Continue")
-        main()
-    else:
-        title()
-        print("Please Add An Encryption Key")
-        null = raw_input("Press ENTER To Continue")
-        main()
+    title()
+    folderToEncrypt = input("Folder To Encrypt: ")
+    longLine()
+    print("Using " + keyFile + " as Key For Encryption")
+    print("Encrypting Files")
+    longLine()
+    for file in os.listdir(folderToEncrypt):    #Gets Filenames In The Folder
+        print(file + "              OK")
+        encryptedFileName = file + ".dnc"
+        pyAesCrypt.encryptFile(file, encryptedFileName, dencryptionKey, bufferSize)   #Encrypts Each File With Session Key
+        time.sleep(0.1)
+    longLine()
+    print("All Files Have Been Encrypted")
+    null = input("Press ENTER To Return To Main Menu")
+    mainFunction()
 
 #Decrypts Folder Contents
 def decryptFolderScreen():
-    if (len(keyToDencrypt) > 0):
-        title()
-        folderToDecrypt = raw_input("Folder To Decrypt: ")
-        longLine()
-        print("Using " + keyToDencrypt + " as Key For Decryption")
-        print("Decrypting Files")
-        longLine()
-        for file in os.listdir(folderToDecrypt):    #Gets File Names In Folder
-            print(file + "  OK")
-            decrypt(dencryptionKey, folderToDecrypt + "/" + file)   #Decrypts Each File
-            time.sleep(0.1)
-        longLine()
-        print("All Files Have Been Decrypted")
-        null = raw_input("Press ENTER To Continue")
-        main()
-    else:
-        title()
-        print("Please Add A Decryption Key")
-        null = raw_input("Press ENTER To Continue")
-        main()
+    title()
+    folderToDecrypt = input("Folder To Decrypt: ")
+    longLine()
+    print("Using " + keyfile + " as Key For Decryption")
+    print("Decrypting Files")
+    longLine()
+    for file in os.listdir(folderToDecrypt):    #Gets File Names In Folder
+        print(file + "              OK")
+        decryptedFileName = os.path.splitext(File)[0]
+        pyAesCrypt.decryptFile(file, decryptedFileName, dencryptionKey, bufferSize)   #Decrypts Each File
+        time.sleep(0.1)
+    longLine()
+    print("All Files Have Been Decrypted")
+    null = input("Press ENTER To Continue")
+    mainFunction()
 
 def kBInterrupt():
     title()
     print("A Keyboard Interrupt Was Detected")
     print("Encryption/Decryption Progress Has Been Lost")
-    returnToMain = raw_input("Return To Main Menu? [yes/no]: ")
+    returnToMain = input("Return To Main Menu? [yes/no]: ")
     if (returnToMain.lower() == "yes"):
         mainFunction()
     elif (returnToMain == "no"):
